@@ -20,73 +20,81 @@ module MarketBot
 
         doc = Nokogiri::HTML(html)
 
-        elements = doc.css('.doc-metadata').first.elements[2].elements
-        elem_count = elements.count
+        elements = doc.css('.metadata .details-section-contents .meta-info')
 
-        (3..(elem_count - 1)).select{ |n| n.odd? }.each do |i|
-          field_name  = elements[i].text
+        #(3..(elem_count - 1)).select{ |n| n.odd? }.each do |i|
+        elements.each do |ele|
+          field_name  = ele.elements.first.inner_text
 
           case field_name
-          when 'Updated:'
-            result[:updated] = elements[i + 1].text
-          when 'Current Version:'
-            result[:current_version] = elements[i + 1].text
-          when 'Requires Android:'
-            result[:requires_android] = elements[i + 1].text
-          when 'Category:'
-            result[:category] = elements[i + 1].text
-          when 'Installs:'
-            result[:installs] = elements[i + 1].children.first.text
-          when 'Size:'
-            result[:size] = elements[i + 1].text
-          when 'Price:'
-            result[:price] = elements[i + 1].text
-          when 'Content Rating:'
-            result[:content_rating] = elements[i + 1].text
+          when 'Updated'
+            result[:updated] = ele.elements.last.text.strip
+          when 'Current Version'
+            result[:current_version] = ele.elements.last.text.strip
+          when 'Requires Android'
+            result[:requires_android] = ele.elements.last.text.strip
+          when 'Installs'
+            result[:installs] = ele.elements.last.text.strip
+          when 'Size'
+            result[:size] = ele.elements.last.text.strip
+          #when 'Price:'
+          #  result[:price] = elements[i + 1].text
+          when 'Content Rating'
+            result[:content_rating] = ele.elements.last.text.strip
           end
         end
 
-        result[:description] = doc.css('#doc-original-text').first.inner_html
-        result[:title] = doc.css('.doc-banner-title').text
+        result[:description] = doc.css('.show-more-content').first.inner_html
+        result[:title] = doc.css('.document-title').text
 
-        rating_elem = doc.css('.average-rating-value')
+        price_text = doc.css('.details-actions .buy-button-container .price').first.
+            inner_text.gsub('Buy', '').strip
+        result[:price] = price_text.include?('Install') ? 'Free' : price_text
+
+        rating_elem = doc.css('.score')
         result[:rating] = rating_elem.first.text unless rating_elem.empty?
 
-        votes_elem = doc.css('.votes')
-        result[:votes] = doc.css('.votes').first.text unless votes_elem.empty?
+        votes_elem = doc.css('.reviews-num')
+        result[:votes] = votes_elem.first.text unless votes_elem.empty?
 
-        result[:developer] = doc.css('.doc-banner-title-container a').text
+        doc.css('.document-subtitle').each do |subtitle|
+          if subtitle.attribute('class').to_s.include?('primary')
+            result[:developer] = subtitle.inner_text.strip
+          elsif subtitle.attribute('class').to_s.include?('category')
+            result[:category] = subtitle.inner_text.strip
+          end
+        end
 
         result[:more_from_developer] = []
         result[:users_also_installed] = []
         result[:related] = []
 
-        if similar_elem = doc.css('.doc-similar').first
-          similar_elem.children.each do |similar_elem_child|
-            assoc_app_type = similar_elem_child.attributes['data-analyticsid'].text
+        #if similar_elem = doc.css('.recommendation').first
+        #  similar_elem.children.each do |similar_elem_child|
+        #    assoc_app_type = similar_elem_child.attributes['data-analyticsid'].text
+        #
+        #    next unless %w(more-from-developer users-also-installed related).include?(assoc_app_type)
+        #
+        #    assoc_app_type = assoc_app_type.gsub('-', '_').to_sym
+        #    result[assoc_app_type] ||= []
+        #
+        #    similar_elem_child.css('.app-left-column-related-snippet-container').each do |app_elem|
+        #      assoc_app = {}
+        #
+        #      assoc_app[:app_id] = app_elem.attributes['data-docid'].text
+        #
+        #      result[assoc_app_type] << assoc_app
+        #    end
+        #  end
+        #end
 
-            next unless %w(more-from-developer users-also-installed related).include?(assoc_app_type)
+        #result[:banner_icon_url] = doc.css('.doc-banner-icon img').first.attributes['src'].value
 
-            assoc_app_type = assoc_app_type.gsub('-', '_').to_sym
-            result[assoc_app_type] ||= []
-
-            similar_elem_child.css('.app-left-column-related-snippet-container').each do |app_elem|
-              assoc_app = {}
-
-              assoc_app[:app_id] = app_elem.attributes['data-docid'].text
-
-              result[assoc_app_type] << assoc_app
-            end
-          end
-        end
-
-        result[:banner_icon_url] = doc.css('.doc-banner-icon img').first.attributes['src'].value
-
-        if image_elem = doc.css('.doc-banner-image-container img').first
-          result[:banner_image_url] = image_elem.attributes['src'].value
-        else
-          result[:banner_image_url] = nil
-        end
+        #if image_elem = doc.css('.doc-banner-image-container img').first
+        #  result[:banner_image_url] = image_elem.attributes['src'].value
+        #else
+        #  result[:banner_image_url] = nil
+        #end
 
         if website_elem = doc.css('a').select{ |l| l.text.include?("Visit Developer's Website")}.first
           redirect_url = website_elem.attribute('href').value
@@ -102,14 +110,15 @@ module MarketBot
           result[:email] = email_elem.attribute('href').value.gsub(/^mailto:/, '')
         end
 
-        unless (video_section_elem = doc.css('.doc-video-section')).empty?
-          urls = video_section_elem.children.css('embed').map{ |e| e.attribute('src').value }
-          result[:youtube_video_ids] = urls.map{ |u| /youtube\.com\/v\/(.*)\?/.match(u)[1] }
+        unless (video_section_elem = doc.css('.play-click-target')).empty?
+          #urls = video_section_elem.children.css('embed').map{ |e| e.attribute('src').value }
+          urls = video_section_elem.attribute('data-video-url').value
+          result[:youtube_video_ids] = [urls] #.map{ |u| /youtube\.com\/v\/(.*)\?/.match(u)[1] }
         else
           result[:youtube_video_ids] = []
         end
 
-        screenshots = doc.css('.screenshot-carousel-content-container img')
+        screenshots = doc.css('.thumbnails img.screenshot')
 
         if screenshots && screenshots.length > 0
           result[:screenshot_urls] = screenshots.map { |s| s.attributes['src'].value }
@@ -117,7 +126,7 @@ module MarketBot
           result[:screenshot_urls] = []
         end
 
-        result[:whats_new] = doc.css('.doc-whatsnew-container').inner_html
+        result[:whats_new] = doc.css('.whatsnew .details-section-contents').inner_html
 
         result[:permissions] = permissions = []
         perm_types = ['dangerous', 'safe']
@@ -139,12 +148,17 @@ module MarketBot
 
         result[:rating_distribution] = { 5 => nil, 4 => nil, 3 => nil, 2 => nil, 1 => nil }
 
-        if (histogram = doc.css('div.histogram-table').first)
-          cur_index = 5
-          histogram.css('tr').each do |e|
-            result[:rating_distribution][cur_index] = e.children.last.inner_text.gsub(/[^0-9]/, '').to_i
-            cur_index -= 1
-          end
+        #if (histogram = doc.css('.rating-histogram').first)
+        #  cur_index = 5
+        #  histogram.children.each do |e|
+        #    result[:rating_distribution][cur_index] = e.children.last.inner_text.gsub(/[^0-9]/, '').to_i
+        #    cur_index -= 1
+        #  end
+        #end
+        histograms = doc.css('.rating-histogram .rating-bar-container .bar-number').map{|i| i.inner_text}
+        histograms.each_with_index do |val, index|
+          a = 5-index
+          result[:rating_distribution][a] = val
         end
 
         result[:html] = html
