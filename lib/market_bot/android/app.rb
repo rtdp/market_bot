@@ -1,5 +1,6 @@
 module MarketBot
   module Android
+    class AppNotFoundError < StandardError; end
 
     class App
       MARKET_ATTRIBUTES = [:title, :rating, :updated, :current_version, :requires_android,
@@ -180,6 +181,7 @@ module MarketBot
 
       def update
         resp = Typhoeus::Request.get(market_url, @request_opts)
+        raise MarketBot::Android::AppNotFoundError if resp.response_code==404
         result = App.parse(resp.body)
         update_callback(result)
 
