@@ -17,6 +17,7 @@ module MarketBot
       attr_reader :error
 
       def self.parse(html)
+        puts html
         result = {}
 
         doc = Nokogiri::HTML(html)
